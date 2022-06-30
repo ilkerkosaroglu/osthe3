@@ -28,7 +28,7 @@ int addChain(int start){
     // find last chain of cluster
     if(start!=0){
         int cur = start;
-        while(fat[cur]!=eoc){
+        while(!isEoc(fat[cur])){
             cur = fat[cur];
         }
         // change last element to point fe
@@ -37,6 +37,10 @@ int addChain(int start){
     // fill new entry as eoc
     fat[fe] = eoc;
     return fe;
+}
+
+bool isEoc(int x){
+    return (eoc&(0xFFFFFF8))==(x&(0xFFFFFF8));
 }
 
 void initializeFATInfo(char* startOfFAT){

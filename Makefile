@@ -1,2 +1,2 @@
 all:
-	g++ *.cpp *.h -o hw3
+	g++ *.cpp *.h *.c -o hw3

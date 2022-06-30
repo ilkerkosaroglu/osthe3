@@ -6,6 +6,7 @@
 #include "fat32.h"
 #include "bpb.h"
 #include "parser.h"
+#include "stringTokenizer.h"
 #include "algo.h"
 
 // using namespace std;
@@ -19,32 +20,6 @@ std::string s;
 std::string path1;
 std::string path2;
 char line[1024];
-
-std::vector<std::string> tokenizePath(std::string p){
-	int pos = -1;
-	std::vector<std::string> v;
-	while((pos = p.find('/'))!=-1){
-		std::string dir = p.substr(0, pos);
-		v.pb(dir);
-		p = p.substr(pos+1);
-	};
-
-	// if(v.size()){
-	// 	if(v[0] == ""){
-	// 		v[0]="/";
-	// 	}
-	// }
-
-	if(p.size()){
-		v.pb(p);
-	}
-
-	return v;
-}
-
-void pwd(){
-
-}
 
 int32_t main(int argc, char** argv){
 	if(argc!=2){
@@ -61,6 +36,10 @@ int32_t main(int argc, char** argv){
 	parsed_input* p = new parsed_input();
 	while(1){
 		std::getline(std::cin, s, '\n');
+		if(""==s){
+			cd({"."});
+			continue;
+		}
 		strcpy (line, s.c_str());
 
 		clean_input(p);
@@ -71,11 +50,15 @@ int32_t main(int argc, char** argv){
 		path2 = p->arg2?p->arg2:"";
 		switch(type){
 			case CD:	
-				cd(tokenizePath(path1));
+				cd(tokenizeStringPath(path1));
 				break;
 			case LS:
-				ls(false, tokenizePath(path1));
+				ls(false, tokenizeStringPath(path1));
+				break;
+			case QUIT:
+				break;
 			default:
+				cd({"."});
 				break;
 		}
 

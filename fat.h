@@ -20,5 +20,6 @@ int addChain(int start);
 void initializeFATInfo(char* startOfFAT);
 void* getClusterPtr(int index);
 
+bool isEoc(int x);
 
 #endif 

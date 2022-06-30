@@ -5,20 +5,79 @@
 
 using namespace std;
 vector<string> wd;
-int curcluster;
+int wcluster;
+int pcluster;
 #define dbg(x) std::cout<<#x<<": "<<x<<std::endl;
 
-// LocInfo locate(vector<string> path){
-//     // vector<string>
-//     // if(path.size()==0){
-//     //     return;
-//     // }
-//     // if(path[0]==""){
-//     //     curcluster = rc;
-//     //     wd = 
-//     // }
+void printDir(){
+    if(wd.size()==1){
+        cout<<"/>";
+        return;
+    }
+    for(int i=0;i<wd.size();i++){
+        cout<<(wd[i]);
+        cout<<(i==wd.size()-1?">":"/");
+    }
+}
 
-// }
+int findItemCluster(int c, string s, int folder=0){
+    auto list = listFiles(c);
+
+    for(auto k:list){
+        if(constructName(k) == s){
+            auto entry = k.data[k.data.size()-1];
+            if(folder&&!(entry->msdos.attributes&0x10))return -1; //if item is file & we expected a folder
+            return entry->msdos.firstCluster;
+        }
+    }
+    return -1;
+}
+
+LocInfo locate(vector<string> path){
+    LocInfo info;
+    vector<string> abspath = wd;
+    int wc = wcluster;
+    int pc = pcluster;
+    for(auto k:path){
+        if(k==""){
+            abspath.clear();
+            abspath.push_back("");
+            wc = rc;
+            pc = rc;
+            continue;
+        }
+        if(k=="."){
+            continue;
+        }
+        if(k==".."){
+            if(abspath.size()>1){
+                int clusterOfItem = findItemCluster(wc, "..", 1);
+                if(clusterOfItem==-1){
+                    info.error = 1;
+                    return info;
+                }
+                if(clusterOfItem==0)clusterOfItem=rc;
+                abspath.pop_back();
+                wc = pc;
+                pc = clusterOfItem;
+            }
+            continue;
+        }
+
+        int clusterOfItem = findItemCluster(wc, k, 1);
+        if(clusterOfItem==-1){
+            info.error = 1;
+            return info;
+        }
+        abspath.push_back(k);
+        pc = wc;
+        wc = clusterOfItem;
+    }
+    info.cluster = wc;
+    info.pcluster = pc;
+    info.dir = abspath;
+    return info;
+}
 
 string constructName(Entry e){
     string s;
@@ -30,7 +89,7 @@ string constructName(Entry e){
             s+=*it;
         }
     }
-    return e.name;
+    return s;
 }
 
 vector<Entry> listFiles(int dircluster){
@@ -39,9 +98,14 @@ vector<Entry> listFiles(int dircluster){
     bool lastEntryWas83 = true;
     int curCluster = dircluster;
     do{
+        // dbg(curCluster);
+        // dbg(eoc);
     FatFileEntry* ffe = (FatFileEntry*)getClusterPtr(curCluster);
     for(int i=0;i<validEntrySize;i++){
         s = "";
+        if(ffe[i].msdos.filename[0]==0 || ffe[i].msdos.filename[0]==0xE5){
+            continue;
+        }
         if(lastEntryWas83){
             v.push_back({});
         }
@@ -79,36 +143,39 @@ vector<Entry> listFiles(int dircluster){
             }
             v[v.size()-1].name = s;
             int clus = (ffe[i].msdos.eaIndex << 2) + ffe[i].msdos.firstCluster;
-            cerr<<"cluster: "<< clus <<endl;
 
         }
 
         v[v.size()-1].data.push_back(ffe+i);
     }
-    }while((curCluster=fat[curCluster])!=eoc);
-    for(int i=0;i<v.size();i++){
-        cout<<constructName(v[i])<<(i==v.size()-1?"\n":"|");
-    }
+    }while(!isEoc(curCluster=fat[curCluster]));
     return v;
 }
 
 void cd(vector<string> path){
     if(path.size()==0){
+        printDir();
         return;
     }
-    //if starting from root
-    if(path[0]==""){
-        wd = path;
-    }
 
-    // locate(path);
+    auto info = locate(path);
+    if(!info.error){
+        wd = info.dir;
+        wcluster = info.cluster;
+        pcluster = info.pcluster;
+    }
+    printDir();
 }
 
 void ls(bool detailed, vector<string> path){
-    listFiles(2);
-    // if(path.size()==0){
-    //     return;
-    // }
-
-    // locate(path);
+    auto info = locate(path);
+    if(info.error){
+        printDir();
+        return;
+    }
+    auto v = listFiles(info.cluster);
+    for(int i=0;i<v.size();i++){
+        cout<<constructName(v[i])<<(i==v.size()-1?"\n":" ");
+    }
+    printDir();
 }
