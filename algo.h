@@ -26,6 +26,8 @@ struct Entry{
     vector<string> names;
     int cluster;
     vector<FatFileEntry*> data;
+    string filename;
+    string extension;
 };
 
 //helpers:

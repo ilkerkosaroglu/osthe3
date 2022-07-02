@@ -133,14 +133,16 @@ vector<Entry> listFiles(int dircluster){
             lastEntryWas83=true;
             for(int j=0;j<8;j++){
                 char c = (char)ffe[i].msdos.filename[j];
-                if(c==32)break;
+                v[v.size()-1].filename += c;
+                if(c==32)continue;
                 s+=c;
             }
             if(ffe[i].msdos.extension[0]!=32)
             s+='.';
             for(int j=0;j<3;j++){
                 char c = (char)ffe[i].msdos.extension[j];
-                if(c==32)break;
+                v[v.size()-1].extension += c;
+                if(c==32)continue;
                 s+=c;
             }
             v[v.size()-1].name = s;
@@ -215,7 +217,6 @@ vector<FatFileEntry*> allocateEntries(int dircluster, int num){
     return v;
 }
 
-//! this doesnt work. (compare is wrong)
 string findUnique(int dircluster, string extension, int num){
     auto name = "~"+to_string(num);
     while(name.size()<8){
@@ -228,7 +229,7 @@ string findUnique(int dircluster, string extension, int num){
 
     auto list = listFiles(dircluster);
     for(auto k:list){
-        if(k.name.compare(0,8,name,0,8) && k.name.compare(9,3,name,8,3)){
+        if(strcmp(name.substr(0,8).c_str(), k.filename.c_str())==0 && strcmp(name.substr(9,3).c_str(), k.extension.c_str())==0){
             //try again
             return findUnique(dircluster, extension, num+1);
         }
@@ -289,16 +290,59 @@ void mk(vector<string> path, int folder){
             started++;
         }
     }
-        dbg("ok!");
 
     string msname = findUnique(fpinfo.locInfoDir.cluster, extension, 1);
-        dbg("ok!");
     vector<string> namesList;
     for(int i=0;i<filename.size();i+=13){
-        dbg("ok..");
         namesList.push_back(filename.substr(i,13));
     }
-    pv(namesList);
+    auto list = allocateEntries(fpinfo.locInfoDir.cluster, namesList.size()+1);
+    for(int i=0;i<8;i++){
+        uint16_t c = msname[i];
+        if(i==0&&c==0xe5)c=0x05;
+        list[0]->msdos.filename[i] = c;
+    }
+    for(int i=0;i<3;i++){
+        uint16_t c = msname[8+i];
+        list[0]->msdos.extension[i] = c;
+    }
+    auto chk = calcChecksum(list[0]);
+    list[0]->msdos.attributes = attr;
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    list[0]->msdos.creationTimeMs = t; //? test
+    dbg(t);
+    dbg(list[0]->msdos.creationTimeMs);
+    
+    list[0]->msdos.creationTime=0;
+    for(int i=0;i<5;i++){
+        int sec = tm.tm_sec/2;
+        list[0]->msdos.creationTime|=(1<<i) & sec;
+    }
+    for(int i=0;i<6;i++){
+        int min = tm.tm_min;
+        list[0]->msdos.creationTime|=((1<<i) & min)<<5;
+    }
+    for(int i=0;i<5;i++){
+        int hour = tm.tm_hour;
+        list[0]->msdos.creationTime|=((1<<i) & hour)<<11;
+    }
+
+    list[0]->msdos.creationDate=0;
+    for(int i=0;i<5;i++){
+        int day = tm.tm_mday;
+        list[0]->msdos.creationDate|=(1<<i) & day;
+    }
+    for(int i=0;i<4;i++){
+        int month = tm.tm_mon;
+        list[0]->msdos.creationDate|=((1<<i) & month)<<5;
+    }
+    for(int i=0;i<5;i++){
+        int year = tm.tm_year - 1980;
+        list[0]->msdos.creationDate|=((1<<i) & year)<<9;
+    }
+
+
 
 }
 
@@ -325,7 +369,9 @@ void ls(bool detailed, vector<string> path){
     }
     auto v = listFiles(info.cluster);
     for(int i=0;i<v.size();i++){
-        cout<<constructName(v[i])<<(i==v.size()-1?"\n":" ");
+        string s = constructName(v[i]);
+        if(s.size()==0 || s[0]=='.')continue;
+        cout<<s<<(i==v.size()-1?"\n":" ");
     }
     printDir();
 }
