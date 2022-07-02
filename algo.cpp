@@ -29,7 +29,7 @@ int findItemCluster(int c, string s, int folder=0){
             auto entry = k.data[k.data.size()-1];
             if((folder==1)&&!(entry->msdos.attributes&0x10))return -1; //if item is file & we expected a folder
             if((folder==2)&&(entry->msdos.attributes&0x10))return -1; //if item is folder & we expected a file
-            return entry->msdos.firstCluster;
+            return (((int)entry->msdos.eaIndex<<16) + (int)entry->msdos.firstCluster);
         }
     }
     return -1;
@@ -53,14 +53,18 @@ LocInfo locate(vector<string> path){
         }
         if(k==".."){
             if(abspath.size()>1){
+                abspath.pop_back();
+                wc = pc;
+                if(abspath.size()==1){
+                    pc = wc;
+                    continue;
+                }
                 int clusterOfItem = findItemCluster(wc, "..", 1);
                 if(clusterOfItem==-1){
                     info.error = 1;
                     return info;
                 }
                 if(clusterOfItem==0)clusterOfItem=rc;
-                abspath.pop_back();
-                wc = pc;
                 pc = clusterOfItem;
             }
             continue;
