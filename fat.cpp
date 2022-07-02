@@ -32,10 +32,15 @@ int addChain(int start){
             cur = fat[cur];
         }
         // change last element to point fe
-        fat[cur] = fe;
+        for(int i=0;i<info[0].NumFATs;i++){
+            *(((int*)((char*)fat+(info[0].extended.FATSize * BPS * i)))+cur) = fe;
+        }
     }
     // fill new entry as eoc
-    fat[fe] = eoc;
+    for(int i=0;i<info[0].NumFATs;i++){
+        *(((int*)((char*)fat+(info[0].extended.FATSize * BPS * i)))+fe) = eoc;
+    }
+
     return fe;
 }
 

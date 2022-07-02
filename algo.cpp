@@ -146,7 +146,7 @@ vector<Entry> listFiles(int dircluster){
                 s+=c;
             }
             v[v.size()-1].name = s;
-            int clus = (ffe[i].msdos.eaIndex << 2) + ffe[i].msdos.firstCluster;
+            int clus = ((int)ffe[i].msdos.eaIndex << 16) + (int)ffe[i].msdos.firstCluster;
 
         }
 
@@ -297,52 +297,122 @@ void mk(vector<string> path, int folder){
         namesList.push_back(filename.substr(i,13));
     }
     auto list = allocateEntries(fpinfo.locInfoDir.cluster, namesList.size()+1);
+    int last = namesList.size();
     for(int i=0;i<8;i++){
         uint16_t c = msname[i];
         if(i==0&&c==0xe5)c=0x05;
-        list[0]->msdos.filename[i] = c;
+        list[last]->msdos.filename[i] = c;
     }
     for(int i=0;i<3;i++){
         uint16_t c = msname[8+i];
-        list[0]->msdos.extension[i] = c;
+        list[last]->msdos.extension[i] = c;
     }
-    auto chk = calcChecksum(list[0]);
-    list[0]->msdos.attributes = attr;
+    auto chk = calcChecksum(list[last]);
+    list[last]->msdos.attributes = attr;
+    
+    list[last]->msdos.reserved = 0;
+
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
-    list[0]->msdos.creationTimeMs = t; //? test
+    list[last]->msdos.creationTimeMs = t; //? test
     dbg(t);
-    dbg(list[0]->msdos.creationTimeMs);
+    dbg(list[last]->msdos.creationTimeMs);
     
-    list[0]->msdos.creationTime=0;
+    list[last]->msdos.creationTime=0;
     for(int i=0;i<5;i++){
         int sec = tm.tm_sec/2;
-        list[0]->msdos.creationTime|=(1<<i) & sec;
+        list[last]->msdos.creationTime|=(1<<i) & sec;
     }
     for(int i=0;i<6;i++){
         int min = tm.tm_min;
-        list[0]->msdos.creationTime|=((1<<i) & min)<<5;
+        list[last]->msdos.creationTime|=((1<<i) & min)<<5;
     }
     for(int i=0;i<5;i++){
         int hour = tm.tm_hour;
-        list[0]->msdos.creationTime|=((1<<i) & hour)<<11;
+        list[last]->msdos.creationTime|=((1<<i) & hour)<<11;
     }
 
-    list[0]->msdos.creationDate=0;
+    list[last]->msdos.creationDate=0;
     for(int i=0;i<5;i++){
         int day = tm.tm_mday;
-        list[0]->msdos.creationDate|=(1<<i) & day;
+        list[last]->msdos.creationDate|=(1<<i) & day;
     }
     for(int i=0;i<4;i++){
         int month = tm.tm_mon;
-        list[0]->msdos.creationDate|=((1<<i) & month)<<5;
+        list[last]->msdos.creationDate|=((1<<i) & month)<<5;
     }
-    for(int i=0;i<5;i++){
+    for(int i=0;i<7;i++){
         int year = tm.tm_year - 1980;
-        list[0]->msdos.creationDate|=((1<<i) & year)<<9;
+        list[last]->msdos.creationDate|=((1<<i) & year)<<9;
     }
 
+    list[last]->msdos.lastAccessTime = list[last]->msdos.creationDate;
 
+    int newCluster = addChain(-1);
+
+    list[last]->msdos.eaIndex = (newCluster >> 16) & 0xffff;
+    list[last]->msdos.firstCluster = newCluster & 0xffff;
+    
+    list[last]->msdos.modifiedDate = list[last]->msdos.creationDate;
+    list[last]->msdos.modifiedTime = list[last]->msdos.creationTime;
+    list[last]->msdos.fileSize = 0;
+
+    for(int i=0;i<namesList.size();i++){
+        list[i]->lfn.sequence_number = namesList.size()-i;
+        for(int k=0;k<namesList[i].size();k++){
+            if(k<5){
+                list[i]->lfn.name1[k] = namesList[i][k];
+            }else if(k<11){
+                list[i]->lfn.name2[k-5] = namesList[i][k];
+            }else{
+                list[i]->lfn.name3[k-11] = namesList[i][k];
+            }
+        }
+        list[i]->lfn.attributes = 0x0f;
+        list[i]->lfn.reserved = 0x00;
+        list[i]->lfn.checksum = chk;
+        list[i]->lfn.firstCluster = 0;
+    }
+    list[0]->lfn.sequence_number |= 0x40;
+
+
+    if(folder==1){
+        FatFileEntry* ffe = (FatFileEntry*)getClusterPtr(newCluster);
+        FatFileEntry* parffe = (FatFileEntry*)getClusterPtr(fpinfo.locInfoDir.cluster);
+        for(int i=0;i<8;i++){
+            ffe[0].msdos.filename[i]=0x20;
+            ffe[1].msdos.filename[i]=0x20;
+        }
+        for(int i=0;i<3;i++){
+            ffe[0].msdos.extension[i]=0x20;
+            ffe[1].msdos.extension[i]=0x20;
+        }
+        ffe[0].msdos.filename[0]='.';
+        ffe[1].msdos.filename[0]='.';
+        ffe[1].msdos.filename[1]='.';
+        // ffe[0].msdos
+        for(int i=0;i<2;i++){
+            auto data = list[last];
+            if(i==1){
+                data = parffe;
+            }
+            if(fpinfo.locInfoDir.cluster==0){
+                data = ffe+2;
+            }
+            ffe[i].msdos.attributes = data->msdos.attributes;
+            ffe[i].msdos.attributes |= 0x10;
+            ffe[i].msdos.reserved = data->msdos.reserved;
+            ffe[i].msdos.creationTimeMs = data->msdos.creationTimeMs;
+            ffe[i].msdos.creationTime = data->msdos.creationTime;
+            ffe[i].msdos.creationDate = data->msdos.creationDate;
+            ffe[i].msdos.lastAccessTime = data->msdos.lastAccessTime;
+            ffe[i].msdos.eaIndex = data->msdos.eaIndex;
+            ffe[i].msdos.modifiedTime = data->msdos.modifiedTime;
+            ffe[i].msdos.modifiedDate = data->msdos.modifiedDate;
+            ffe[i].msdos.firstCluster = data->msdos.firstCluster;
+            ffe[i].msdos.fileSize = data->msdos.fileSize;
+        }
+    }
 
 }
 
@@ -371,6 +441,10 @@ void ls(bool detailed, vector<string> path){
     for(int i=0;i<v.size();i++){
         string s = constructName(v[i]);
         if(s.size()==0 || s[0]=='.')continue;
+        cout<<s<<(i==v.size()-1?"\n":" ");
+    }
+    for(int i=0;i<v.size();i++){
+        int s(v[i].data[v[i].data.size()-1]->msdos.firstCluster);
         cout<<s<<(i==v.size()-1?"\n":" ");
     }
     printDir();

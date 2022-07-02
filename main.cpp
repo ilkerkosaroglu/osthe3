@@ -53,7 +53,11 @@ int32_t main(int argc, char** argv){
 				cd(tokenizeStringPath(path1));
 				break;
 			case LS:
-				ls(false, tokenizeStringPath(path1));
+				if(path1=="-l"){
+					ls(true, tokenizeStringPath(path2));
+				}else{
+					ls(false, tokenizeStringPath(path1));
+				}
 				break;
 			case MKDIR:
 				mk(tokenizeStringPath(path1), 1);
