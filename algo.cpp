@@ -7,6 +7,7 @@ using namespace std;
 vector<string> wd;
 int wcluster;
 int pcluster;
+#define pv(x) std::cout<<#x<<": ";for(auto k:x){ std::cout<<k<<" "; }std::cout<<std::endl;
 #define dbg(x) std::cout<<#x<<": "<<x<<std::endl;
 
 void printDir(){
@@ -26,7 +27,8 @@ int findItemCluster(int c, string s, int folder=0){
     for(auto k:list){
         if(constructName(k) == s){
             auto entry = k.data[k.data.size()-1];
-            if(folder&&!(entry->msdos.attributes&0x10))return -1; //if item is file & we expected a folder
+            if((folder==1)&&!(entry->msdos.attributes&0x10))return -1; //if item is file & we expected a folder
+            if((folder==2)&&(entry->msdos.attributes&0x10))return -1; //if item is folder & we expected a file
             return entry->msdos.firstCluster;
         }
     }
@@ -150,6 +152,154 @@ vector<Entry> listFiles(int dircluster){
     }
     }while(!isEoc(curCluster=fat[curCluster]));
     return v;
+}
+
+unsigned char calcChecksum(FatFileEntry* f){
+    unsigned char ans = 0;
+    for(int i=8;i<8;i++){
+        ans = ((ans & 1) << 7) + (ans >> 1) + f->msdos.filename[i];
+    }
+    for(int i=0;i<3;i++){
+        ans = ((ans & 1) << 7) + (ans >> 1) + f->msdos.extension[i];
+    }
+    return ans;
+}
+
+FilePathInfo locateFilePath(vector<string> path, int folder){
+    FilePathInfo fpinfo;
+    if(path.size()==0){
+        fpinfo.error = 1;
+        return fpinfo;
+    }
+
+    vector<string> dir = path;
+    string filename = dir.back();
+    dir.pop_back();
+    auto info = locate(dir); 
+
+    if(info.error){
+        fpinfo.error = 1;
+        return fpinfo;
+    }
+
+    // int itemc = findItemCluster(info.cluster, filename, folder);
+    // if(itemc==-1){
+    //     fpinfo.error = 1;
+    //     return fpinfo;
+    // }
+
+    fpinfo.locInfoDir = info;
+    // fpinfo.cluster = itemc;
+    return fpinfo;
+}
+
+vector<FatFileEntry*> allocateEntries(int dircluster, int num){
+    vector<FatFileEntry*> v;
+    int curCluster = dircluster;
+    do{
+        // dbg(curCluster);
+        // dbg(eoc);
+    FatFileEntry* ffe = (FatFileEntry*)getClusterPtr(curCluster);
+    for(int i=0;i<validEntrySize;i++){
+        if(ffe[i].msdos.filename[0]==0 || ffe[i].msdos.filename[0]==0xE5){
+            v.push_back(ffe+i);
+            if(v.size()==num)return v;
+        }
+    }
+    }while(!isEoc(curCluster=fat[curCluster]));
+    //try again
+    if(v.size()<num){
+        addChain(dircluster);
+        return allocateEntries(dircluster, num); 
+    }
+    return v;
+}
+
+//! this doesnt work. (compare is wrong)
+string findUnique(int dircluster, string extension, int num){
+    auto name = "~"+to_string(num);
+    while(name.size()<8){
+        name+=" ";
+    }
+    name+=extension;
+    while(name.size()<11){
+        name+=" ";
+    }
+
+    auto list = listFiles(dircluster);
+    for(auto k:list){
+        if(k.name.compare(0,8,name,0,8) && k.name.compare(9,3,name,8,3)){
+            //try again
+            return findUnique(dircluster, extension, num+1);
+        }
+    }
+    return name;
+}
+
+bool isUnique(int dircluster, string name){
+    dbg("ok");
+    auto list = listFiles(dircluster);
+    for(auto k:list){
+        if(constructName(k)==name){
+            return false;
+        }
+    }
+    return true;
+}
+
+//folder:1, file:2
+void mk(vector<string> path, int folder){
+    int attr = 0x00;
+    if(folder==1)attr=0x10;
+
+    FilePathInfo fpinfo = locateFilePath(path, folder);
+    if(fpinfo.error==1){
+        printDir();
+        return;
+    }
+
+    string filename = path.back();
+    if(filename.size()==0){
+        printDir();
+        return;
+    }
+
+    if(filename[0]=='.'){
+        printDir();
+        return;
+    }
+    dbg(fpinfo.locInfoDir.cluster);
+    if(!isUnique(fpinfo.locInfoDir.cluster,filename)){
+        printDir();
+        return;
+    }
+
+    string extension = "   ";
+    int started = 0;
+    for(int i=0;i<filename.size();i++){
+        if(started == 4){
+            printDir();
+            return;
+        }
+        if(filename[i]=='.'){
+            started = 1;
+        }
+        if(started){
+            extension[started-1] = filename[i];
+            started++;
+        }
+    }
+        dbg("ok!");
+
+    string msname = findUnique(fpinfo.locInfoDir.cluster, extension, 1);
+        dbg("ok!");
+    vector<string> namesList;
+    for(int i=0;i<filename.size();i+=13){
+        dbg("ok..");
+        namesList.push_back(filename.substr(i,13));
+    }
+    pv(namesList);
+
 }
 
 void cd(vector<string> path){

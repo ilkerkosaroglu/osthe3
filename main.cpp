@@ -55,6 +55,12 @@ int32_t main(int argc, char** argv){
 			case LS:
 				ls(false, tokenizeStringPath(path1));
 				break;
+			case MKDIR:
+				mk(tokenizeStringPath(path1), 1);
+				break;
+			case TOUCH:
+				mk(tokenizeStringPath(path1), 2);
+				break;
 			case QUIT:
 				break;
 			default:

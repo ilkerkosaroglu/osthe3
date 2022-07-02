@@ -13,6 +13,13 @@ class LocInfo{
     int error = 0;
 };
 
+class FilePathInfo{
+    public:
+    LocInfo locInfoDir;
+    int cluster;
+    int error = 0;
+};
+
 struct Entry{
     bool isFile;
     string name;
@@ -30,7 +37,7 @@ string constructName(Entry e);
 void cd(vector<string> path);
 void ls(bool detailed, vector<string> path);
 void mv();
-void mk();
+void mk(vector<string> path, int folder);
 void cat();
 
 #endif
