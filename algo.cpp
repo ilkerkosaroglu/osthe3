@@ -12,12 +12,12 @@ int pcluster;
 
 void printDir(){
     if(wd.size()==1){
-        cout<<"/>";
+        cout<<"/> ";
         return;
     }
     for(int i=0;i<wd.size();i++){
         cout<<(wd[i]);
-        cout<<(i==wd.size()-1?">":"/");
+        cout<<(i==wd.size()-1?"> ":"/");
     }
 }
 
@@ -104,8 +104,6 @@ vector<Entry> listFiles(int dircluster){
     bool lastEntryWas83 = true;
     int curCluster = dircluster;
     do{
-        // dbg(curCluster);
-        // dbg(eoc);
     FatFileEntry* ffe = (FatFileEntry*)getClusterPtr(curCluster);
     for(int i=0;i<validEntrySize;i++){
         s = "";
@@ -162,7 +160,7 @@ vector<Entry> listFiles(int dircluster){
 
 unsigned char calcChecksum(FatFileEntry* f){
     unsigned char ans = 0;
-    for(int i=8;i<8;i++){
+    for(int i=0;i<8;i++){
         ans = ((ans & 1) << 7) + (ans >> 1) + f->msdos.filename[i];
     }
     for(int i=0;i<3;i++){
@@ -203,11 +201,9 @@ vector<FatFileEntry*> allocateEntries(int dircluster, int num){
     vector<FatFileEntry*> v;
     int curCluster = dircluster;
     do{
-        // dbg(curCluster);
-        // dbg(eoc);
     FatFileEntry* ffe = (FatFileEntry*)getClusterPtr(curCluster);
     for(int i=0;i<validEntrySize;i++){
-        if(ffe[i].msdos.filename[0]==0 || ffe[i].msdos.filename[0]==0xE5){
+        if(ffe[i].msdos.filename[0]==0){
             v.push_back(ffe+i);
             if(v.size()==num)return v;
         }
@@ -233,8 +229,7 @@ string findUnique(int dircluster, string extension, int num){
 
     auto list = listFiles(dircluster);
     for(auto k:list){
-        if(strcmp(name.substr(0,8).c_str(), k.filename.c_str())==0 && strcmp(name.substr(9,3).c_str(), k.extension.c_str())==0){
-            //try again
+        if(strcmp(name.substr(0,8).c_str(), k.filename.c_str())==0 && strcmp(name.substr(8,3).c_str(), k.extension.c_str())==0){
             return findUnique(dircluster, extension, num+1);
         }
     }
@@ -242,7 +237,6 @@ string findUnique(int dircluster, string extension, int num){
 }
 
 bool isUnique(int dircluster, string name){
-    dbg("ok");
     auto list = listFiles(dircluster);
     for(auto k:list){
         if(constructName(k)==name){
@@ -253,38 +247,33 @@ bool isUnique(int dircluster, string name){
 }
 
 //folder:1, file:2
-void mk(vector<string> path, int folder){
+int mk(vector<string> path, int folder, int allocateFolderMem){
     int attr = 0x00;
     if(folder==1)attr=0x10;
 
     FilePathInfo fpinfo = locateFilePath(path, folder);
     if(fpinfo.error==1){
-        printDir();
-        return;
+        return -1;
     }
 
     string filename = path.back();
     if(filename.size()==0){
-        printDir();
-        return;
+        return -1;
     }
 
     if(filename[0]=='.'){
-        printDir();
-        return;
+        return -1;
     }
-    dbg(fpinfo.locInfoDir.cluster);
+
     if(!isUnique(fpinfo.locInfoDir.cluster,filename)){
-        printDir();
-        return;
+        return -1;
     }
 
     string extension = "   ";
     int started = 0;
     for(int i=0;i<filename.size();i++){
         if(started == 4){
-            printDir();
-            return;
+            return -1;
         }
         if(filename[i]=='.'){
             started = 1;
@@ -296,6 +285,7 @@ void mk(vector<string> path, int folder){
     }
 
     string msname = findUnique(fpinfo.locInfoDir.cluster, extension, 1);
+
     vector<string> namesList;
     for(int i=0;i<filename.size();i+=13){
         namesList.push_back(filename.substr(i,13));
@@ -318,9 +308,8 @@ void mk(vector<string> path, int folder){
 
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
-    list[last]->msdos.creationTimeMs = t; //? test
-    dbg(t);
-    dbg(list[last]->msdos.creationTimeMs);
+    
+    list[last]->msdos.creationTimeMs = (t%1000) /10; //? test
     
     list[last]->msdos.creationTime=0;
     for(int i=0;i<5;i++){
@@ -352,7 +341,11 @@ void mk(vector<string> path, int folder){
 
     list[last]->msdos.lastAccessTime = list[last]->msdos.creationDate;
 
-    int newCluster = addChain(-1);
+    int newCluster = 0;
+    if(folder==1 && allocateFolderMem){
+        newCluster = addChain(0);
+        if(newCluster==-1) return -1;
+    }
 
     list[last]->msdos.eaIndex = (newCluster >> 16) & 0xffff;
     list[last]->msdos.firstCluster = newCluster & 0xffff;
@@ -361,8 +354,18 @@ void mk(vector<string> path, int folder){
     list[last]->msdos.modifiedTime = list[last]->msdos.creationTime;
     list[last]->msdos.fileSize = 0;
 
+    reverse(namesList.begin(),namesList.end());
     for(int i=0;i<namesList.size();i++){
         list[i]->lfn.sequence_number = namesList.size()-i;
+        for(int k=0;k<13;k++){
+            if(k<5){
+                list[i]->lfn.name1[k] = 0;
+            }else if(k<11){
+                list[i]->lfn.name2[k-5] = 0;
+            }else{
+                list[i]->lfn.name3[k-11] = 0;
+            }
+        }
         for(int k=0;k<namesList[i].size();k++){
             if(k<5){
                 list[i]->lfn.name1[k] = namesList[i][k];
@@ -399,9 +402,9 @@ void mk(vector<string> path, int folder){
             auto data = list[last];
             if(i==1){
                 data = parffe;
-            }
-            if(fpinfo.locInfoDir.cluster==0){
-                data = ffe+2;
+                if(fpinfo.locInfoDir.cluster==rc){
+                    data = ffe+2;
+                }
             }
             ffe[i].msdos.attributes = data->msdos.attributes;
             ffe[i].msdos.attributes |= 0x10;
@@ -416,13 +419,123 @@ void mk(vector<string> path, int folder){
             ffe[i].msdos.firstCluster = data->msdos.firstCluster;
             ffe[i].msdos.fileSize = data->msdos.fileSize;
         }
+
+        //change parent modification date
+        if(fpinfo.locInfoDir.cluster!=rc){
+            auto entry = parffe+1;
+            int parparclu = (((int)entry->msdos.eaIndex<<16) + (int)entry->msdos.firstCluster);
+            if(parparclu==0)parparclu=rc;
+            FatFileEntry* parparffe = (FatFileEntry*)getClusterPtr(parparclu);
+            auto v = listFiles(parparclu);
+            for(auto k:v){
+                auto kentry = k.data[k.data.size()-1];
+                int kclu = (((int)kentry->msdos.eaIndex<<16) + (int)kentry->msdos.firstCluster);
+                if(kclu==0)kclu=rc;
+                if(kclu == fpinfo.locInfoDir.cluster){
+                    kentry->msdos.modifiedDate = list[last]->msdos.modifiedDate;
+                    kentry->msdos.modifiedTime = list[last]->msdos.modifiedTime;
+                    break;
+                }
+            }
+
+        }
+        
+    }
+
+    return 0;
+}
+
+void mv(vector<string> path1, vector<string> path2){
+    FilePathInfo fpinfo = locateFilePath(path1, 2);
+    if(fpinfo.error==1){
+        return;
+    }
+
+    string filename = path1.back();
+    if(filename.size()==0){
+        return;
+    }
+
+    if(filename[0]=='.'){
+        return;
+    }
+    auto list1 = listFiles(fpinfo.locInfoDir.cluster);
+    Entry item;
+    int flag = 0;
+    for(auto k:list1){
+        if(constructName(k)==filename){
+            item = k;
+            flag = 1;
+        }
+    }
+    if(flag==0)return;
+
+    auto info = locate(path2);
+    if(info.error==1){
+        return;
+    }
+    path2.push_back(filename);
+
+    int clc = info.cluster;
+
+    string filename2 = filename;
+
+    if(!isUnique(clc,filename2)){
+        return ;
+    }
+    int type = (item.data[item.data.size()-1]->msdos.attributes&0x10) ? 1:2;
+    int res = mk(path2, type, 0);
+    if(res==-1){
+        return;
+    }
+
+    uint16_t eanew;
+    uint16_t fcnew;
+
+    if(clc==rc){
+        eanew = 0;
+        fcnew = 0;
+    }else{
+        eanew = (clc >> 16) & 0xffff;
+        fcnew = (clc) & 0xffff;        
+    }
+
+    auto e = item.data[item.data.size()-1];
+    
+
+    auto list2 = listFiles(clc);
+    for(auto k:list2){
+        if(constructName(k)==filename2){
+            auto entry = k.data[k.data.size()-1];
+
+            entry->msdos.attributes = e->msdos.attributes;
+            entry->msdos.reserved = e->msdos.reserved;
+            entry->msdos.creationTimeMs = e->msdos.creationTimeMs;
+            entry->msdos.creationTime = e->msdos.creationTime;
+            entry->msdos.creationDate = e->msdos.creationDate;
+            entry->msdos.lastAccessTime = e->msdos.lastAccessTime;
+            entry->msdos.eaIndex = e->msdos.eaIndex;
+            entry->msdos.firstCluster = e->msdos.firstCluster;
+            entry->msdos.fileSize = e->msdos.fileSize;
+            break;
+        }
+    }
+
+    if(type==1){
+        int nextc = (((int)e->msdos.eaIndex<<16) + (int)e->msdos.firstCluster);
+        FatFileEntry* pt = (FatFileEntry*)getClusterPtr(nextc);
+        pt[1].msdos.eaIndex = eanew;
+        pt[1].msdos.firstCluster = fcnew;
+    }
+
+    for(int i=0;i<item.data.size();i++){
+        item.data[i]->msdos.filename[0] = 0xe5; //mark as deleted
     }
 
 }
 
 void cd(vector<string> path){
     if(path.size()==0){
-        printDir();
         return;
     }
 
@@ -432,24 +545,76 @@ void cd(vector<string> path){
         wcluster = info.cluster;
         pcluster = info.pcluster;
     }
-    printDir();
 }
+
+vector<string> months = {"January","February","March","April","May","June","July","August","October","September","November","December"};
 
 void ls(bool detailed, vector<string> path){
     auto info = locate(path);
     if(info.error){
-        printDir();
         return;
     }
     auto v = listFiles(info.cluster);
-    for(int i=0;i<v.size();i++){
-        string s = constructName(v[i]);
-        if(s.size()==0 || s[0]=='.')continue;
-        cout<<s<<(i==v.size()-1?"\n":" ");
+    if(!detailed){
+        for(int i=0;i<v.size();i++){
+            string s = constructName(v[i]);
+            if(s.size()==0 || s[0]=='.')continue;
+            cout<<s<<(i==v.size()-1?"\n":" ");
+        }
+    }else{
+        for(int i=0;i<v.size();i++){
+            string s = constructName(v[i]);
+            if(s.size()==0 || s[0]=='.')continue;
+            if(v[i].data.size()==0)continue;
+            FatFileEntry* last = v[i].data[v[i].data.size()-1];
+            cout<<((last->msdos.attributes&0x10)?'d':'-')<<"rwx------"<<" ";
+            int mon = ((last->msdos.modifiedDate) & 0x1e0)>>5;
+            int day = (last->msdos.modifiedDate) & 0x1f;
+            int hr = ((last->msdos.modifiedTime) & 0xf800)>>11;
+            int mn = ((last->msdos.modifiedTime) & 0x7e0)>>5;
+            cout<<1<<" root "<<"root "<<months[mon]<<" "<<std::setfill('0') << std::setw(2)<<day<<std::setw(0)<<" ";
+            cout<<std::setw(2)<<hr<<std::setw(0)<<":"<<std::setw(2)<<mn<<" "<<std::setw(0)<<s<<endl;
+        }
     }
-    for(int i=0;i<v.size();i++){
-        int s(v[i].data[v[i].data.size()-1]->msdos.firstCluster);
-        cout<<s<<(i==v.size()-1?"\n":" ");
+
+}
+
+void cat(vector<string> path){
+    
+    FilePathInfo fpinfo = locateFilePath(path, 2);
+    if(fpinfo.error==1){
+        return;
     }
-    printDir();
+
+    string filename = path.back();
+    if(filename.size()==0){
+        return;
+    }
+
+    if(filename[0]=='.'){
+        return;
+    }
+
+    int itemc = findItemCluster(fpinfo.locInfoDir.cluster,filename,2);
+    if(itemc==-1){
+        return;
+    }
+
+    int flag = 0;
+    do{
+        if(itemc==0){
+            flag = 1;
+            cout<<endl;
+            break;
+        }
+        auto r = (char*)getClusterPtr(itemc);
+        for(int i=0;i<clsize;i++){
+            if(r[i]=='\0'){
+                flag = 1;
+                cout<<endl;
+                break;
+            }
+            cout<<r[i];
+        }
+    }while(!flag && !isEoc(itemc=fat[itemc]));
 }

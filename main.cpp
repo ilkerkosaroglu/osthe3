@@ -35,6 +35,7 @@ int32_t main(int argc, char** argv){
 
 	parsed_input* p = new parsed_input();
 	while(1){
+		printDir();
 		std::getline(std::cin, s, '\n');
 		if(""==s){
 			cd({"."});
@@ -64,6 +65,12 @@ int32_t main(int argc, char** argv){
 				break;
 			case TOUCH:
 				mk(tokenizeStringPath(path1), 2);
+				break;
+			case CAT:
+				cat(tokenizeStringPath(path1));
+				break;
+			case MV:
+				mv(tokenizeStringPath(path1),tokenizeStringPath(path2));
 				break;
 			case QUIT:
 				break;

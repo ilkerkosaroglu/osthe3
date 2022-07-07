@@ -38,8 +38,9 @@ string constructName(Entry e);
 
 void cd(vector<string> path);
 void ls(bool detailed, vector<string> path);
-void mv();
-void mk(vector<string> path, int folder);
-void cat();
+void mv(vector<string> path1, vector<string> path2);
+int mk(vector<string> path, int folder, int allocateFolderMem = 1);
+void cat(vector<string> path);
+void printDir();
 
 #endif
